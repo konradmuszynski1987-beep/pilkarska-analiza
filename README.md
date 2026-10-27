@@ -1,10 +1,10 @@
 # Analiza piłkarska
 
 Startowa aplikacja webowa po polsku. Zawiera:
-- model Poissona do obliczania prawdopodobieństw 1X2 i wybranych rynków bramkowych na podstawie wprowadzonych średnich goli,
+- panel meczów (na razie bez podłączonych danych),
 - własne oceny i notatki zapisywane w lokalnej przeglądarce,
 - generator kuponów AKO na podstawie prawdopodobieństw i kursów podanych przez użytkownika,
-- eksport danych i prostą historię obliczeń.
+- eksport analiz i kuponów.
 
 ## Uruchomienie przez GitHub Pages
 1. Otwórz repozytorium `pilkarska-analiza`.
@@ -15,6 +15,6 @@ Startowa aplikacja webowa po polsku. Zawiera:
 6. Po chwili odśwież stronę Settings → Pages. GitHub pokaże adres opublikowanej strony.
 
 ## Ważne ograniczenia
-Dane meczowe i kursy nie są jeszcze podłączone. Plik `data/matches.json` celowo nie zawiera fikcyjnych meczów ani prognoz. Model Poissona liczy wyniki z ręcznie podanych średnich goli; to nie jest jeszcze zweryfikowany model predykcyjny. Generator AKO używa danych wejściowych użytkownika i nie gwarantuje zysku.
+Dane meczowe i kursy nie są jeszcze podłączone. Plik `data/matches.json` celowo nie zawiera fikcyjnych meczów ani prognoz. Model statystyczny, testy historyczne i automatyczne aktualizacje będą dodawane w kolejnych etapach. Generator AKO używa danych wejściowych użytkownika i nie gwarantuje zysku.
 
 Nie umieszczaj tokenów API ani haseł w kodzie strony. Sekrety do automatyzacji powinny być przechowywane w GitHub Actions Secrets.
