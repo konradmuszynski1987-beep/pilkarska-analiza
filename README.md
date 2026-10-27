@@ -18,3 +18,6 @@ Startowa aplikacja webowa po polsku. Zawiera:
 Dane meczowe i kursy nie są jeszcze podłączone. Plik `data/matches.json` celowo nie zawiera fikcyjnych meczów ani prognoz. Model statystyczny, testy historyczne i automatyczne aktualizacje będą dodawane w kolejnych etapach. Generator AKO używa danych wejściowych użytkownika i nie gwarantuje zysku.
 
 Nie umieszczaj tokenów API ani haseł w kodzie strony. Sekrety do automatyzacji powinny być przechowywane w GitHub Actions Secrets.
+
+## Publikacja
+Strona jest wdrażana automatycznie przez GitHub Actions po zmianach w repozytorium.
