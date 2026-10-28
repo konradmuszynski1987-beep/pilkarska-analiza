@@ -60,47 +60,33 @@ const competitions=[
  {name:'Premier League',code:'eng.1'},{name:'Championship (Anglia)',code:'eng.2'},{name:'La Liga',code:'esp.1'},{name:'Serie A',code:'ita.1'},{name:'Bundesliga',code:'ger.1'},{name:'Ligue 1',code:'fra.1'},{name:'Liga portugalska',code:'por.1'},{name:'Eredivisie',code:'ned.1'},{name:'Liga belgijska',code:'bel.1'},{name:'Liga turecka',code:'tur.1'},{name:'Liga szkocka',code:'sco.1'},{name:'Ekstraklasa',code:'pol.1'},{name:'Liga czeska',code:'cze.1'},{name:'Liga grecka',code:'gre.1'},{name:'Liga Mistrzów',code:'uefa.champions'},{name:'Liga Europy',code:'uefa.europa'},{name:'Liga Konferencji',code:'uefa.europa.conf'}
 ];
 function ymd(d){return d.getFullYear()+String(d.getMonth()+1).padStart(2,'0')+String(d.getDate()).padStart(2,'0')}
+const scoreboardMemory=new Map();
+function compactScoreboardEvent(e,leagueLabel){const c=e.competitions?.[0]||{},cs=c.competitors||[];return {id:e.id,date:e.date,leagueLabel,status:{type:{completed:!!e.status?.type?.completed,state:e.status?.type?.state||'',shortDetail:e.status?.type?.shortDetail||'',detail:e.status?.type?.detail||''}},competitions:[{competitors:cs.map(x=>({homeAway:x.homeAway,score:x.score,team:{displayName:x.team?.displayName||x.team?.name||'',name:x.team?.name||x.team?.displayName||''}}))}]}}
+async function fetchScoreboardDay(c,day){
+ const key='footballScoreboard:'+c.code+':'+day,now=Date.now();let cached=scoreboardMemory.get(key);
+ if(!cached){try{const raw=localStorage.getItem(key);if(raw){const parsed=JSON.parse(raw);if(parsed.expires>now&&Array.isArray(parsed.events))cached=parsed.events}}catch{}}
+ if(cached){scoreboardMemory.set(key,cached);return cached}
+ const url='https://site.api.espn.com/apis/site/v2/sports/soccer/'+encodeURIComponent(c.code)+'/scoreboard?dates='+day+'&limit=500';
+ let lastError;
+ for(let attempt=0;attempt<2;attempt++){try{const res=await fetch(url);if(!res.ok)throw Error(c.name+' HTTP '+res.status+' ('+day+')');const data=await res.json();const events=(Array.isArray(data.events)?data.events:[]).map(e=>compactScoreboardEvent(e,c.name)).filter(e=>e.id&&e.date);scoreboardMemory.set(key,events);try{localStorage.setItem(key,JSON.stringify({expires:now+(day<ymd(new Date())?7*86400000:10*60000),events}))}catch{}return events}catch(err){lastError=err;if(attempt===0)await new Promise(resolve=>setTimeout(resolve,350))}}
+ throw lastError||Error('Brak odpowiedzi ESPN dla '+c.name+' '+day)
+}
 async function fetchCompetitionRange(c,from,to){
- // ESPN w 2026 r. odrzuca część zakresów dat YYYYMMDD-YYYYMMDD.
- // Pobieramy miesiącami, deduplikujemy wydarzenia i docinamy zakres lokalnie.
- const all=[];const cursor=new Date(from.getFullYear(),from.getMonth(),1);const last=new Date(to.getFullYear(),to.getMonth(),1);
- while(cursor<=last){
-  const month=String(cursor.getFullYear())+String(cursor.getMonth()+1).padStart(2,'0');
-  const url='https://site.api.espn.com/apis/site/v2/sports/soccer/'+encodeURIComponent(c.code)+'/scoreboard?dates='+month;
-  const res=await fetch(url);if(!res.ok)throw Error(c.name+' HTTP '+res.status+' (miesiąc '+month+')');
-  const data=await res.json();if(Array.isArray(data.events))all.push(...data.events.map(e=>({...e,leagueLabel:c.name})));
-  cursor.setMonth(cursor.getMonth()+1);
- }
- const lo=from.getTime(),hi=to.getTime();
- return [...new Map(all.filter(e=>e.id&&e.date&&new Date(e.date).getTime()>=lo&&new Date(e.date).getTime()<=hi).map(e=>[e.id,e])).values()];
+ const days=[];const cursor=new Date(from.getFullYear(),from.getMonth(),from.getDate());const last=new Date(to.getFullYear(),to.getMonth(),to.getDate());
+ while(cursor<=last){days.push(ymd(cursor));cursor.setDate(cursor.getDate()+1)}
+ const all=[];for(let i=0;i<days.length;i+=6){const batch=await Promise.allSettled(days.slice(i,i+6).map(day=>fetchScoreboardDay(c,day)));for(const result of batch){if(result.status==='fulfilled')all.push(...result.value);else throw result.reason}}
+ const lo=from.getTime()-86400000,hi=to.getTime()+86400000;
+ return [...new Map(all.filter(e=>e.id&&new Date(e.date).getTime()>=lo&&new Date(e.date).getTime()<=hi).map(e=>[e.id,e])).values()];
 }
 async function loadMatches(){
- const tbody=$('matchRows');$('status').textContent='Pobieram terminarz i wyniki z ESPN dla 17 rozgrywek…';
- const from=new Date(),to=new Date();to.setDate(to.getDate()+7);
- const range=ymd(from)+'-'+ymd(to);
- const settled=await Promise.allSettled(competitions.map(async c=>{
-  const url='https://site.api.espn.com/apis/site/v2/sports/soccer/'+encodeURIComponent(c.code)+'/scoreboard?dates='+range;
-  const res=await fetch(url);if(!res.ok)throw Error(c.code+' HTTP '+res.status);
-  const data=await res.json();
-  return {competition:c.name,events:Array.isArray(data.events)?data.events:[]};
- }));
- const events=[],failed=[];
- settled.forEach((r,i)=>{if(r.status==='fulfilled'){r.value.events.forEach(e=>events.push({...e,competitionLabel:r.value.competition}))}else failed.push(competitions[i].name)});
- events.sort((a,b)=>new Date(a.date)-new Date(b.date));
- const unique=[...new Map(events.map(e=>[e.id,e])).values()];
- const rows=unique.map(e=>{
-  const comp=(e.competitions||[])[0]||{}, sides=comp.competitors||[];
-  const home=sides.find(x=>x.homeAway==='home')||sides[0]||{},away=sides.find(x=>x.homeAway==='away')||sides[1]||{};
-  const dt=e.date?new Date(e.date):null;
-  const date=dt&&!isNaN(dt)?dt.toLocaleString('pl-PL',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}):'—';
-  const state=e.status&&e.status.type?e.status.type.shortDetail||e.status.type.detail||e.status.type.state:'Terminarz';
-  const score=home.score!=null&&away.score!=null?home.score+' : '+away.score:'';
-  const status=score?score+' · '+state:state;
-  return '<tr><td>'+esc(home.team?.displayName||home.team?.name||'—')+' — '+esc(away.team?.displayName||away.team?.name||'—')+'</td><td>'+esc(e.competitionLabel)+'</td><td>'+esc(date)+'</td><td>'+esc(status)+'</td><td>—</td><td>—</td></tr>';
- }).join('');
- tbody.innerHTML=rows||'<tr><td colspan="6">Brak spotkań w zwróconym zakresie dat. Spróbuj odświeżyć później.</td></tr>';
- const successes=competitions.length-failed.length;
- $('status').textContent='Źródło: ESPN · zakres: najbliższe 7 dni · rozgrywki odczytane: '+successes+'/'+competitions.length+' · mecze: '+unique.length+(failed.length?' · niedostępne: '+failed.join(', '):'')+' · pobrano: '+new Date().toLocaleTimeString('pl-PL',{hour:'2-digit',minute:'2-digit'});
+ const tbody=$('matchRows');$('status').textContent='Pobieram terminarz z ESPN dla 17 rozgrywek…';
+ const from=new Date();from.setHours(0,0,0,0);const to=new Date(from);to.setDate(to.getDate()+7);
+ const settled=await Promise.allSettled(competitions.map(c=>fetchCompetitionRange(c,from,to)));
+ const events=[],failed=[];settled.forEach((r,i)=>{if(r.status==='fulfilled')events.push(...r.value.map(e=>({...e,competitionLabel:competitions[i].name})));else failed.push(competitions[i].name)});
+ events.sort((a,b)=>new Date(a.date)-new Date(b.date));const unique=[...new Map(events.filter(e=>e.date&&new Date(e.date)>=from&&new Date(e.date)<new Date(to.getTime()+86400000)).map(e=>[e.id,e])).values()];
+ const rows=unique.map(e=>{const comp=(e.competitions||[])[0]||{},sides=comp.competitors||[],home=sides.find(x=>x.homeAway==='home')||sides[0]||{},away=sides.find(x=>x.homeAway==='away')||sides[1]||{},dt=e.date?new Date(e.date):null,date=dt&&!isNaN(dt)?dt.toLocaleString('pl-PL',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}):'—',state=e.status?.type?.shortDetail||e.status?.type?.detail||'Terminarz',score=home.score!=null&&away.score!=null?home.score+' : '+away.score:'',status=score?score+' · '+state:state;return '<tr><td>'+esc(home.team?.displayName||home.team?.name||'—')+' — '+esc(away.team?.displayName||away.team?.name||'—')+'</td><td>'+esc(e.competitionLabel||'—')+'</td><td>'+esc(date)+'</td><td>'+esc(status)+'</td><td>—</td><td>—</td></tr>'}).join('');
+ tbody.innerHTML=rows||'<tr><td colspan="6">Brak spotkań w najbliższych dniach lub źródło nie zwróciło terminarza.</td></tr>';
+ const successes=competitions.length-failed.length;$('status').textContent='Źródło: ESPN · zakres: najbliższe 7 dni · rozgrywki odczytane: '+successes+'/'+competitions.length+' · mecze: '+unique.length+(failed.length?' · błędy: '+failed.join(', '):'')+' · cache: aktywny · '+new Date().toLocaleTimeString('pl-PL',{hour:'2-digit',minute:'2-digit'});
 }
 function renderExperts(){$('expertlist').innerHTML=experts.map((x,i)=>'<article class="metric"><strong>'+esc(x.match)+'</strong><span class="small">'+esc(x.league||'Liga niepodana')+'</span><p class="small">Forma '+x.form+' · motywacja '+x.motivation+' · skład '+x.squad+' · atak '+x.attack+' · obrona '+x.defence+'</p><p>'+esc(x.notes||'Brak notatek')+'</p><button onclick="removeExpert('+i+')">Usuń</button></article>').join('')||'<p class="muted">Brak zapisanych ocen.</p>'}
 window.removeExpert=i=>{experts.splice(i,1);localStorage.setItem('footballExperts',JSON.stringify(experts));renderExperts()};
