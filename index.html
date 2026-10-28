@@ -57,7 +57,7 @@ const $=id=>document.getElementById(id);let eventPool=[],coupons=[],experts=JSON
 document.querySelectorAll('nav button').forEach(b=>b.onclick=()=>{document.querySelectorAll('nav button').forEach(x=>x.classList.toggle('active',x===b));document.querySelectorAll('.tab').forEach(s=>s.classList.toggle('hidden',s.id!==b.dataset.tab))});
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));const money=n=>n.toLocaleString('pl-PL',{style:'currency',currency:'PLN'});
 const competitions=[
- {name:'Premier League',code:'eng.1'},{name:'La Liga',code:'esp.1'},{name:'Serie A',code:'ita.1'},{name:'Bundesliga',code:'ger.1'},{name:'Ligue 1',code:'fra.1'},{name:'Liga portugalska',code:'por.1'},{name:'Eredivisie',code:'ned.1'},{name:'Liga belgijska',code:'bel.1'},{name:'Liga Mistrzów',code:'uefa.champions'},{name:'Liga Europy',code:'uefa.europa'},{name:'Liga Konferencji',code:'uefa.europa.conf'}
+ {name:'Premier League',code:'eng.1'},{name:'Championship (Anglia)',code:'eng.2'},{name:'La Liga',code:'esp.1'},{name:'Serie A',code:'ita.1'},{name:'Bundesliga',code:'ger.1'},{name:'Ligue 1',code:'fra.1'},{name:'Liga portugalska',code:'por.1'},{name:'Eredivisie',code:'ned.1'},{name:'Liga belgijska',code:'bel.1'},{name:'Liga turecka',code:'tur.1'},{name:'Liga szkocka',code:'sco.1'},{name:'Ekstraklasa',code:'pol.1'},{name:'Liga czeska',code:'cze.1'},{name:'Liga grecka',code:'gre.1'},{name:'Liga Mistrzów',code:'uefa.champions'},{name:'Liga Europy',code:'uefa.europa'},{name:'Liga Konferencji',code:'uefa.europa.conf'}
 ];
 function ymd(d){return d.getFullYear()+String(d.getMonth()+1).padStart(2,'0')+String(d.getDate()).padStart(2,'0')}
 async function fetchCompetitionRange(c,from,to){
@@ -66,7 +66,7 @@ async function fetchCompetitionRange(c,from,to){
  return [...new Map(all.filter(e=>e.id).map(e=>[e.id,e])).values()];
 }
 async function loadMatches(){
- const tbody=$('matchRows');$('status').textContent='Pobieram terminarz i wyniki z ESPN dla 11 rozgrywek…';
+ const tbody=$('matchRows');$('status').textContent='Pobieram terminarz i wyniki z ESPN dla 17 rozgrywek…';
  const from=new Date(),to=new Date();to.setDate(to.getDate()+7);
  const range=ymd(from)+'-'+ymd(to);
  const settled=await Promise.allSettled(competitions.map(async c=>{
