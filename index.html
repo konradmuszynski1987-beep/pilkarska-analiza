@@ -21,6 +21,11 @@ const competitions=[
  {name:'Premier League',code:'eng.1'},{name:'La Liga',code:'esp.1'},{name:'Serie A',code:'ita.1'},{name:'Bundesliga',code:'ger.1'},{name:'Ligue 1',code:'fra.1'},{name:'Liga portugalska',code:'por.1'},{name:'Eredivisie',code:'ned.1'},{name:'Liga belgijska',code:'bel.1'},{name:'Liga Mistrzów',code:'uefa.champions'},{name:'Liga Europy',code:'uefa.europa'},{name:'Liga Konferencji',code:'uefa.europa.conf'}
 ];
 function ymd(d){return d.getFullYear()+String(d.getMonth()+1).padStart(2,'0')+String(d.getDate()).padStart(2,'0')}
+async function fetchCompetitionRange(c,from,to){
+ const all=[];const cursor=new Date(from);
+ while(cursor<=to){const chunkEnd=new Date(cursor);chunkEnd.setDate(chunkEnd.getDate()+6);if(chunkEnd>to)chunkEnd.setTime(to.getTime());const range=ymd(cursor)+'-'+ymd(chunkEnd);const r=await fetch('https://site.api.espn.com/apis/site/v2/sports/soccer/'+encodeURIComponent(c.code)+'/scoreboard?dates='+range);if(!r.ok)throw Error(c.name+' HTTP '+r.status);const d=await r.json();all.push(...(d.events||[]).map(e=>({...e,leagueLabel:c.name})));cursor.setDate(cursor.getDate()+7)}
+ return [...new Map(all.filter(e=>e.id).map(e=>[e.id,e])).values()];
+}
 async function loadMatches(){
  const tbody=$('matches');$('status').textContent='Pobieram terminarz i wyniki z ESPN dla 11 rozgrywek…';
  const from=new Date(),to=new Date();to.setDate(to.getDate()+7);
@@ -76,7 +81,7 @@ async function runHistoricalBacktest(){
  const status=$('backtestStatus');status.textContent='Pobieram zakończone mecze z 11 rozgrywek…';$('runBacktest').disabled=true;
  try{
   const from=new Date();from.setDate(from.getDate()-90);const to=new Date();to.setDate(to.getDate()-1);const range=ymd(from)+'-'+ymd(to);
-  const settled=await Promise.allSettled(competitions.map(async c=>{const r=await fetch('https://site.api.espn.com/apis/site/v2/sports/soccer/'+encodeURIComponent(c.code)+'/scoreboard?dates='+range);if(!r.ok)throw Error(c.name);const d=await r.json();return (d.events||[]).map(e=>({...e,leagueLabel:c.name}))}));
+  const settled=await Promise.allSettled(competitions.map(c=>fetchCompetitionRange(c,from,to)));
   let failed=0,events=[];settled.forEach(x=>{if(x.status==='fulfilled')events.push(...x.value);else failed++});
   events=[...new Map(events.filter(e=>e.id&&e.date).map(e=>[e.id,e])).values()].filter(e=>e.status?.type?.completed).sort((a,b)=>new Date(a.date)-new Date(b.date));
   const leagueHistory={},teamHistory={};const rows=[],byLeague={};let sumBrier=0,sumLog=0,sumOver=0,n=0;
@@ -116,7 +121,7 @@ $('generate').onclick=()=>{const legs=+$('legs').value,count=+$('count').value,s
 async function buildScoutModel(){
  const status=$('scoutStatus');status.textContent='Pobieram wyniki z ostatnich 45 dni…';
  const from=new Date();from.setDate(from.getDate()-45);const to=new Date();to.setDate(to.getDate()+7);const range=ymd(from)+'-'+ymd(to);
- const settled=await Promise.allSettled(competitions.map(async c=>{const r=await fetch('https://site.api.espn.com/apis/site/v2/sports/soccer/'+encodeURIComponent(c.code)+'/scoreboard?dates='+range);if(!r.ok)throw Error(c.name);const d=await r.json();return (d.events||[]).map(e=>({...e,leagueLabel:c.name}))}));
+ const settled=await Promise.allSettled(competitions.map(c=>fetchCompetitionRange(c,from,to)));
  const events=[];let fail=0;settled.forEach(x=>{if(x.status==='fulfilled')events.push(...x.value);else fail++});
  const team={};const league={};const now=Date.now();
  for(const e of events){if(!e.status?.type?.completed||!e.date||now-new Date(e.date).getTime()>45*86400000)continue;const cs=e.competitions?.[0]?.competitors||[],h=cs.find(x=>x.homeAway==='home')||cs[0],a=cs.find(x=>x.homeAway==='away')||cs[1];if(!h||!a||h.score==null||a.score==null)continue;const L=e.leagueLabel,hn=h.team?.displayName||h.team?.name,an=a.team?.displayName||a.team?.name,hg=+h.score,ag=+a.score;if(!league[L])league[L]={h:[],a:[]};league[L].h.push(hg);league[L].a.push(ag);for(const [n,gf,ga,v] of [[hn,hg,ag,'h'],[an,ag,hg,'a']]){const k=L+'|'+n;if(!team[k])team[k]={h:[],a:[]};team[k][v].push({gf,ga})}}
