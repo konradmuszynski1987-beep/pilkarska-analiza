@@ -92,7 +92,9 @@ async function runHistoricalBacktest(){
    const league=e.leagueLabel||'Inne',hn=home.team?.displayName||home.team?.name,an=away.team?.displayName||away.team?.name;if(!hn||!an)continue;
    const lh=leagueHistory[league]||{homeGF:[],awayGF:[]};const th=teamHistory[league+'|'+hn]||{homeGF:[],homeGA:[],awayGF:[],awayGA:[]};const ta=teamHistory[league+'|'+an]||{homeGF:[],homeGA:[],awayGF:[],awayGA:[]};
    const avgHome=mean(lh.homeGF,'v',1.45),avgAway=mean(lh.awayGF,'v',1.15);
-   const homeAttack=mean(th.homeGF,'v',avgHome),homeDef=mean(th.homeGA,'v',avgAway),awayAttack=mean(ta.awayGF,'v',avgAway),awayDef=mean(ta.awayGA,'v',avgHome);
+   // Wygładzanie małych prób: pięć meczów wagi średniej ligowej ogranicza nadreakcję na 1–2 wyniki.
+   const shrunk=(arr,prior,priorMatches=5)=>(arr.reduce((z,x)=>z+x.v,0)+prior*priorMatches)/(arr.length+priorMatches);
+   const homeAttack=shrunk(th.homeGF,avgHome),homeDef=shrunk(th.homeGA,avgAway),awayAttack=shrunk(ta.awayGF,avgAway),awayDef=shrunk(ta.awayGA,avgHome);
    const homeLambda=Math.max(.2,Math.min(4,(homeAttack/Math.max(.2,avgHome))*(awayDef/Math.max(.2,avgHome))*avgHome));
    const awayLambda=Math.max(.2,Math.min(4,(awayAttack/Math.max(.2,avgAway))*(homeDef/Math.max(.2,avgAway))*avgAway));
    const p=poissonProb(homeLambda,awayLambda),actual=hg>ag?0:hg===ag?1:2,probs=[p.h,p.d,p.a];let brier=0;for(let i=0;i<3;i++)brier+=Math.pow(probs[i]-(i===actual?1:0),2);const logLoss=-Math.log(Math.max(0.000001,probs[actual]));const baseCounts=[lh.homeGF.length?lh.homeGF.filter(x=>x.v>0).length:0,0,0];let baseH=0,baseD=0,baseA=0;for(let z=0;z<lh.homeGF.length;z++){const hh=lh.homeGF[z].v,aa=lh.awayGF[z].v;if(hh>aa)baseH++;else if(hh===aa)baseD++;else baseA++}const baseN=baseH+baseD+baseA,baseProbs=baseN?[(baseH+1)/(baseN+3),(baseD+1)/(baseN+3),(baseA+1)/(baseN+3)]:[.45,.27,.28];let baseBrier=0;for(let i=0;i<3;i++)baseBrier+=Math.pow(baseProbs[i]-(i===actual?1:0),2);const overActual=hg+ag>2.5?1:0,overBrier=Math.pow(p.o25-overActual,2);
