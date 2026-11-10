@@ -85,7 +85,7 @@ function compactScoreboardEvent(e,leagueLabel){const c=e.competitions?.[0]||{},c
 async function fetchScoreboardDay(c,day,force=false){
  const key='footballScoreboard:'+c.code+':'+day,now=Date.now();let cached=scoreboardMemory.get(key);
  if(!cached){try{const raw=localStorage.getItem(key);if(raw){const parsed=JSON.parse(raw);if(parsed.expires>now&&Array.isArray(parsed.events))cached=parsed.events}}catch{}}
- if(cached&&!force&&(cached.length>0||day<ymd(new Date()))){scoreboardMemory.set(key,cached);return cached}
+ if(cached&&!force){scoreboardMemory.set(key,cached);return cached}
  const url='https://site.api.espn.com/apis/site/v2/sports/soccer/'+encodeURIComponent(c.code)+'/scoreboard?dates='+day+'&limit=500';
  let lastError;
  for(let attempt=0;attempt<2;attempt++){try{const res=await fetch(url);if(!res.ok)throw Error(c.name+' HTTP '+res.status+' ('+day+')');const data=await res.json();const events=(Array.isArray(data.events)?data.events:[]).map(e=>compactScoreboardEvent(e,c.name)).filter(e=>e.id&&e.date);scoreboardMemory.set(key,events);try{localStorage.setItem(key,JSON.stringify({expires:now+(day<ymd(new Date())?7*86400000:10*60000),events}))}catch{}return events}catch(err){lastError=err;if(attempt===0)await new Promise(resolve=>setTimeout(resolve,350))}}
@@ -108,7 +108,7 @@ async function fetchCompetitionRange(c,from,to,force=false){
 async function loadMatches(force=false){
  const tbody=$('matchRows');$('status').textContent='Pobieram terminarz z ESPN dla 17 rozgrywek…';
  const from=new Date();from.setHours(0,0,0,0);const to=new Date(from);to.setDate(to.getDate()+7);
- const settled=await mapWithLimit(competitions,3,c=>fetchCompetitionRange(c,from,to,force));
+ let completedLeagues=0;const settled=await mapWithLimit(competitions,5,async c=>{const result=await fetchCompetitionRange(c,from,to,force);completedLeagues++;$('status').textContent='Pobieranie terminarza: '+completedLeagues+'/'+competitions.length+' lig…';return result});
  const events=[],failed=[];settled.forEach((r,i)=>{if(r.status==='fulfilled')events.push(...r.value.map(e=>({...e,competitionLabel:competitions[i].name})));else failed.push(competitions[i].name)});
  events.sort((a,b)=>new Date(a.date)-new Date(b.date));const unique=[...new Map(events.filter(e=>e.date&&new Date(e.date)>=from&&new Date(e.date)<new Date(to.getTime()+86400000)).map(e=>[e.id,e])).values()];
  const rows=unique.map(e=>{const comp=(e.competitions||[])[0]||{},sides=comp.competitors||[],home=sides.find(x=>x.homeAway==='home')||sides[0]||{},away=sides.find(x=>x.homeAway==='away')||sides[1]||{},dt=e.date?new Date(e.date):null,date=dt&&!isNaN(dt)?dt.toLocaleString('pl-PL',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}):'—',state=e.status?.type?.shortDetail||e.status?.type?.detail||'Terminarz',score=home.score!=null&&away.score!=null?home.score+' : '+away.score:'',status=score?score+' · '+state:state;return '<tr><td>'+esc(home.team?.displayName||home.team?.name||'—')+' — '+esc(away.team?.displayName||away.team?.name||'—')+'</td><td>'+esc(e.competitionLabel||'—')+'</td><td>'+esc(date)+'</td><td>'+esc(status)+'</td><td>—</td><td>—</td></tr>'}).join('');
@@ -208,7 +208,7 @@ $('generate').onclick=()=>{$('saveCouponsToHistory').disabled=true;$('couponSave
 async function buildScoutModel(){
  const status=$('scoutStatus'),btn=$('scout');btn.disabled=true;status.textContent='Pobieram wyniki i terminarz dla 17 rozgrywek. Pierwsze uruchomienie może potrwać kilkanaście sekund…';$('scoutRows').innerHTML='<tr><td colspan="6">Trwa pobieranie danych — poczekaj na zakończenie.</td></tr>';try{
  const from=new Date();from.setDate(from.getDate()-45);const to=new Date();to.setDate(to.getDate()+30);const range=ymd(from)+'-'+ymd(to);
- const settled=await mapWithLimit(competitions,3,c=>fetchCompetitionRange(c,from,to));
+ let completedLeagues=0;const settled=await mapWithLimit(competitions,5,async c=>{const result=await fetchCompetitionRange(c,from,to);completedLeagues++;status.textContent='Pobieranie terminarza i wyników: '+completedLeagues+'/'+competitions.length+' lig zakończonych…';return result});
  const events=[];let fail=0;settled.forEach((x,i)=>{if(x.status==='fulfilled')events.push(...x.value.map(e=>({...e,leagueLabel:e.leagueLabel||competitions[i].name})));else fail++});
  const team={};const league={};const now=Date.now();
  for(const e of events){if(!e.status?.type?.completed||!e.date||now-new Date(e.date).getTime()>45*86400000)continue;const cs=e.competitions?.[0]?.competitors||[],h=cs.find(x=>x.homeAway==='home')||cs[0],a=cs.find(x=>x.homeAway==='away')||cs[1];if(!h||!a||h.score==null||a.score==null)continue;const L=e.leagueLabel,hn=h.team?.displayName||h.team?.name,an=a.team?.displayName||a.team?.name,hg=+h.score,ag=+a.score;if(!league[L])league[L]={h:[],a:[]};league[L].h.push(hg);league[L].a.push(ag);for(const [n,gf,ga,v] of [[hn,hg,ag,'h'],[an,ag,hg,'a']]){const k=L+'|'+n;if(!team[k])team[k]={h:[],a:[]};team[k][v].push({gf,ga})}}
