@@ -99,15 +99,17 @@ async function fetchCompetitionRange(c,from,to,force=false){
   const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),15000);
   let data;try{const res=await fetch(url,{signal:controller.signal});if(!res.ok)throw Error(c.name+' HTTP '+res.status);data=await res.json()}finally{clearTimeout(timer)}
   const events=(Array.isArray(data.events)?data.events:[]).map(e=>compactScoreboardEvent(e,c.name)).filter(e=>e.id&&e.date).map(e=>({...e,leagueLabel:c.name}));
-  // Prawidłowa odpowiedź z pustą tablicą oznacza brak meczów w tym zakresie.
-  // Nie uruchamiamy wtedy kosztownego fallbacku dzień po dniu dla całych 75 dni.
-  const unique=[...new Map(events.map(e=>[e.id,e])).values()];
-  try{localStorage.setItem(key,JSON.stringify({expires:now+(toDay<ymd(new Date())?6*3600000:10*60000),events:unique}))}catch{}
-  return unique;
- }catch(err){/* Fallback do pojedynczych dni tylko wtedy, gdy endpoint zakresowy naprawdę zawiedzie. */}
+  if(events.length){
+   const unique=[...new Map(events.map(e=>[e.id,e])).values()];
+   try{localStorage.setItem(key,JSON.stringify({expires:now+(toDay<ymd(new Date())?6*3600000:10*60000),events:unique}))}catch{}
+   return unique;
+  }
+  // ESPN potrafi zwrócić HTTP 200 z pustą listą dla długiego zakresu.
+  // W takim przypadku trzeba odpytać konkretne dni, bo inaczej skaut nie zobaczy terminarza.
+ }catch(err){/* Fallback do pojedynczych dni po błędzie endpointu zakresowego. */}
  const days=[];const cursor=new Date(from.getFullYear(),from.getMonth(),from.getDate());const last=new Date(to.getFullYear(),to.getMonth(),to.getDate());
  while(cursor<=last){days.push(ymd(cursor));cursor.setDate(cursor.getDate()+1)}
- const all=[];for(let i=0;i<days.length;i+=8){const batch=await Promise.allSettled(days.slice(i,i+8).map(day=>fetchScoreboardDay(c,day,force)));for(const result of batch){if(result.status==='fulfilled')all.push(...result.value.map(e=>({...e,leagueLabel:c.name})));}}
+ const all=[];for(let i=0;i<days.length;i+=14){const batch=await Promise.allSettled(days.slice(i,i+14).map(day=>fetchScoreboardDay(c,day,force)));for(const result of batch){if(result.status==='fulfilled')all.push(...result.value.map(e=>({...e,leagueLabel:c.name})));}}
  const lo=from.getTime()-86400000,hi=to.getTime()+86400000;
  const unique=[...new Map(all.filter(e=>e.id&&new Date(e.date).getTime()>=lo&&new Date(e.date).getTime()<=hi).map(e=>[e.id,{...e,leagueLabel:c.name}])).values()];
  try{localStorage.setItem(key,JSON.stringify({expires:now+10*60000,events:unique}))}catch{}
