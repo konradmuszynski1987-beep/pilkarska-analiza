@@ -93,15 +93,25 @@ async function fetchScoreboardDay(c,day,force=false){
 }
 async function mapWithLimit(items,limit,worker){const out=new Array(items.length);let next=0;async function run(){while(true){const i=next++;if(i>=items.length)return;try{out[i]={status:'fulfilled',value:await worker(items[i],i)}}catch(reason){out[i]={status:'rejected',reason}}}}await Promise.all(Array.from({length:Math.min(limit,items.length)},run));return out}
 async function fetchCompetitionRange(c,from,to,force=false){
- // ESPN wycofał obsługę zapytań scoreboard z zakresem dat.
- // Pobieramy każdy dzień osobno, żeby nie zwracać częściowego terminarza z cache.
+ // ESPN nie obsługuje już zakresu YYYYMMDD-YYYYMMDD.
+ // Pobieramy całe miesiące (dates=YYYYMM), a potem zawężamy do żądanego okna.
  const fromDay=ymd(from),toDay=ymd(to),key='footballRange:'+c.code+':'+fromDay+':'+toDay,now=Date.now();
- const days=[];const cursor=new Date(from.getFullYear(),from.getMonth(),from.getDate());const last=new Date(to.getFullYear(),to.getMonth(),to.getDate());
- while(cursor<=last){days.push(ymd(cursor));cursor.setDate(cursor.getDate()+1)}
+ const months=[];const cursor=new Date(from.getFullYear(),from.getMonth(),1);const last=new Date(to.getFullYear(),to.getMonth(),1);
+ while(cursor<=last){months.push(String(cursor.getFullYear())+String(cursor.getMonth()+1).padStart(2,'0'));cursor.setMonth(cursor.getMonth()+1)}
  const all=[];
- for(let i=0;i<days.length;i+=3){
-  const batch=await Promise.allSettled(days.slice(i,i+3).map(day=>fetchScoreboardDay(c,day,force)));
-  for(const result of batch)if(result.status==='fulfilled')all.push(...result.value.map(e=>({...e,leagueLabel:c.name})));
+ for(const month of months){
+  const monthKey='footballMonth:'+c.code+':'+month;
+  let monthEvents=null;
+  if(!force){try{const raw=localStorage.getItem(monthKey);if(raw){const parsed=JSON.parse(raw);if(parsed.expires>now&&Array.isArray(parsed.events))monthEvents=parsed.events}}catch{}}
+  if(!monthEvents){
+   const url='https://site.api.espn.com/apis/site/v2/sports/soccer/'+encodeURIComponent(c.code)+'/scoreboard?dates='+month+'&limit=500';
+   const res=await fetch(url);if(!res.ok)throw Error(c.name+' HTTP '+res.status+' ('+month+')');
+   const data=await res.json();
+   monthEvents=(Array.isArray(data.events)?data.events:[]).map(e=>compactScoreboardEvent(e,c.name)).filter(e=>e.id&&e.date);
+   const monthStart=month+'01',isFuture=month>=ymd(new Date()).slice(0,6);
+   try{localStorage.setItem(monthKey,JSON.stringify({expires:now+(isFuture?10*60000:7*86400000),events:monthEvents}))}catch{}
+  }
+  all.push(...monthEvents.map(e=>({...e,leagueLabel:c.name})));
  }
  const lo=from.getTime()-86400000,hi=to.getTime()+86400000;
  const unique=[...new Map(all.filter(e=>e.id&&new Date(e.date).getTime()>=lo&&new Date(e.date).getTime()<=hi).map(e=>[e.id,{...e,leagueLabel:c.name}])).values()];
